@@ -1,44 +1,149 @@
-import React, { useEffect, useState } from 'react';
-import { Text, View, StyleSheet, TouchableOpacity, Alert, Image, ImageBackground } from 'react-native';
-import MapView, { PROVIDER_GOOGLE, Marker } from 'react-native-maps';
+// TODO: Alert = 1, then display alert
+// Read username, if username matches they see the bike, otherwise they do NOT
+
 import { useNavigation } from '@react-navigation/native';
-import { Auth } from 'aws-amplify';
+import { Auth,Geo,selectInput } from 'aws-amplify';
+import axios from 'axios';
+import React, { useEffect, useState } from 'react';
+import {
+  Text,
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  ImageBackground,
+  TouchableHighlight,
+} from 'react-native';
+import Geocoder from 'react-native-geocoding';
+import MapView, { PROVIDER_GOOGLE, Marker } from 'react-native-maps';
+import { DebugInstructions } from 'react-native/Libraries/NewAppScreen';
+
+import awsmobile from '../../aws-exports';
 import CustomButton from '../../components/CustomButton';
 import { headerFooterStyles, generateHeader, generateFooter } from '../Header_Footer/HeaderFooter';
-
+Geocoder.init('AIzaSyBmjnH37clBAaGKN4R6Ji-qqUM3w8Lk2Js');
 
 // Page to unlock delegator
 const MapScreen = () => {
   const [telemetry, setTelemetry] = React.useState(undefined);
+  // const [state, setState] = React.useState(undefined);
+  const [bikeInfo, setBikeInfo] = React.useState(undefined);
   const [tasks, setTasks] = React.useState(undefined);
   const [isLoading, setIsLoading] = React.useState(false);
-  const [modalOpen, setModalOpen] = React.useState(false);
   const navigation = useNavigation();
+  const [SelectedBike, setSelectedBike] = React.useState(0);
+  const [username, setUserName] = React.useState(false);
+  const [initialized, setInitialized] = useState(false);
+  const [alertOccurred, setAlertOccurred] = useState(0);
+  const [AvailableBikes] = useState([
+    // replace this with an API Fetch
+    {
+      key: 0,
+      bikeName: 'Townie Original 7D',
+      location: {
+        longitude: -122.92683112296389,
+        latitude: 49.21252448182181,
+      },
+      rating: '4.7/5',
+      price: '4.60',
+      time: '5d 2h',
+      image: require('../../../assets/bikeSelection/bike1.jpg'),
+    },
+    {
+      key: 1,
+      bikeName: 'Domane+ ALR',
+      location: {
+        longitude: -122.92301986354128,
+        latitude: 49.215203617787076,
+      },
+      rating: '4.1/5',
+      price: '3.61',
+      time: '3d 5h',
+      image: require('../../../assets/bikeSelection/bike2.jpg'),
+    },
+    {
+      key: 2,
+      bikeName: 'Boone 6',
+      location: {
+        longitude: -122.92642293689471,
+        latitude: 49.21748350869642,
+      },
+      rating: '4.9/5',
+      price: '6.81',
+      time: '4d 5h',
+      image: require('../../../assets/bikeSelection/bike3.jpg'),
+    },
+    {
+      key: 3,
+      bikeName: 'Checkpoint ALR 5 Driftless',
+      location: {
+        longitude: -122.92588104594287,
+        latitude: 49.215035775154206,
+      },
+      rating: '3.7/5',
+      price: '12.52',
+      time: '2d 1h',
+      image: require('../../../assets/bikeSelection/bike4.jpg'),
+    },
+  ]);
+  function onCheckoutPressed(selBike) {
+    if (selBike == 0) {
+      navigation.navigate('BikeSelection');
+    } else {
+      const image = SelectedBike.image;
+      const name = SelectedBike.bikeName;
+      const rating = SelectedBike.rating;
+      const price = SelectedBike.price;
+      const time = SelectedBike.time;
+      let location = '';
 
-  const onCheckoutPressed = () => {
-    navigation.navigate('BikeSelection');
-  };
+      if (SelectedBike != 0) {
+        Geocoder.from(SelectedBike.location.latitude, SelectedBike.location.longitude)
+          .catch((error) => console.log(error))
+          .then((loc) => {
+            location =
+              loc.results[1].address_components[0].long_name +
+              ' ' +
+              loc.results[1].address_components[1].long_name +
+              ', ' +
+              loc.results[1].address_components[2].long_name;
+            navigation.navigate('CurrentBike', { image, name, location, rating, price, time });
+          });
+      }
+    }
+  }
+  //RUN THIS AXIOS POST TO SEND PUSH NOTIFICATIONS
+  if (bikeInfo != undefined && bikeInfo.alert == 1 && alertOccurred == 0) {
+    // bikeInfo real value + bikeInfo has alert + alertOccurred only triggered once
+    setAlertOccurred(1);
+    bikeInfo.alert = 0;
+    editBike(bikeInfo);
+
+    axios.post(`https://app.nativenotify.com/api/indie/notification`, {
+      subID: 'SwivelUserId', //hardcoded 
+      appId: 5009,
+      appToken: 'zLGSh3bkdXv2IweqrDbIFD',
+      title: 'Theft Detected',
+      message: 'The Swivel motion detector has been triggered ',
+    });
+  }
+
+  if (bikeInfo != undefined) {
+    console.log(bikeInfo);
+  } else {
+    console.log('nope');
+  }
+
+  if (username == false) {
+    Auth.currentUserInfo().then((userInfo) => {
+      const { attributes = {} } = userInfo;
+      setUserName(attributes.preferred_username);
+    });
+  }
 
   useEffect(() => {
     const updateInterval = setInterval(() => {
-      fetch('http://iot.swivel.bike/telemetry/1')
-        // .then((resp) => resp.json()) // PLEASE UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        .then((resp) => {
-          setTelemetry(resp.data);
-        })
-        .catch((err) => {
-          console.log(err);
-        });
-
-      fetch('http://iot.swivel.bike/control/1')
-        // .then((resp) => resp.json()) // PLEASE UNCOMMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        .then((resp) => {
-          setTasks(resp.data);
-        })
-        .catch((err) => {
-          console.log(err);
-        });
-    }, 2000);
+      getBike();
+    }, 6000);
     return () => {
       window.clearInterval(updateInterval);
     };
@@ -47,7 +152,7 @@ const MapScreen = () => {
   const addTask = (task) => {
     setIsLoading(true);
     fetch('http://iot.swivel.bike/control/1', {
-      method: 'POST',
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
@@ -58,6 +163,7 @@ const MapScreen = () => {
       .then((resp) => resp.json())
       .then((resp) => {
         setTasks(resp.data);
+        console.log(resp.data);
       })
       .catch((err) => {
         console.log(err);
@@ -86,139 +192,201 @@ const MapScreen = () => {
       });
   };
 
-  const getFriendlyNetworkStatus = () => {
-    if (!telemetry) {
-      return 'Unknown';
-    }
-    const { grps } = telemetry;
-    const { network_status } = grps;
-    if (network_status === 0 || network_status === 2) {
-      return 'Searching (Operator)';
-    } else if (network_status === 1) {
-      return 'Registered (Home)';
-    } else if (network_status === 3) {
-      return 'Registration Denied';
-    } else if (network_status === 5) {
-      return 'Registered (Roaming)';
-    }
-    return 'Unknown';
+  const getBike = () => {
+    fetch('https://iot.swivel.bike/helium/app')
+      .then((resp) => resp.json())
+      .then((resp) => {
+        setBikeInfo(resp.data);
+      })
+      .catch((err) => {
+        console.log(err);
+      });
   };
 
-  const isUnlockable = () => {
-    if (isLoading) {
-      return false;
-    }
-    if (!telemetry) {
-      return false;
-    }
-    if (!tasks) {
-      return false;
-    }
-    if (tasks && tasks.includes('UNLOCK')) {
-      return false;
-    }
-    return true;
+  const editBike = (task) => {
+    setIsLoading(true);
+    fetch('https://iot.swivel.bike/helium/app', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(task),
+    })
+      .then((resp) => resp.json())
+      .then((resp) => {
+        setBikeInfo(resp.data);
+        console.log(resp.data);
+      })
+      .catch((err) => {
+        console.log(err);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   };
 
-  const signOut = () => {
-    Auth.signOut();
-  };
+  function initBike() {
+    getBike();
+    const temp = {
+      lat: 49.277748,
+      long: -122.90905,
+      location: tempLocation,
+      name: 'GT Aggressor',
+      price: 4.21,
+      rating: '4.7/5',
+      time: '5d 2h',
+    };
+    let tempLocation = null;
+    Geocoder.from(49.277748, -122.90905)
+      .catch((error) => console.log(error))
+      .then((loc) => {
+        tempLocation =
+          loc.results[1].address_components[0].long_name +
+          ' ' +
+          loc.results[1].address_components[1].long_name +
+          ', ' +
+          loc.results[1].address_components[2].long_name;
+      });
+    console.log('TEStlocation' + tempLocation);
+    console.log(temp);
+    setBikeInfo(temp);
+    editBike(bikeInfo);
+  }
 
-  return (
-    <View style={styles.container}>
-      <ImageBackground
-        style={{ flex: 1 }}
-        source={require('../../../assets/swivel_login_background.jpg')}
-      >
-        <View style={headerFooterStyles.header}>{generateHeader()}</View>
-        <View style={headerFooterStyles.body}>
-          <CustomButton text="Checkout" onPress={onCheckoutPressed} alignItems="right" />
-          <View style={styles.container}>
-            {telemetry && (
-              <>
-                <MapView
-                  provider={PROVIDER_GOOGLE} // remove if not using Google Maps
-                  style={styles.map}
-                  region={{
-                    latitude: telemetry ? telemetry.gps.latitude : 49.277748,
-                    longitude: telemetry ? telemetry.gps.longitude : -122.90905,
-                    latitudeDelta: 0.015,
-                    longitudeDelta: 0.0121,
+  if (bikeInfo == undefined) {
+    getBike();
+    console.log('Init Bike');
+  }
+
+  if (bikeInfo == undefined) {
+    return (
+      <View>
+        <Text> Loading... </Text>
+      </View>
+    );
+  } else {
+    return (
+      <View style={styles.container}>
+        <ImageBackground
+          style={{ flex: 1 }}
+          source={require('../../../assets/swivel_login_background.jpg')}
+        >
+          <View style={headerFooterStyles.header}>{generateHeader()}</View>
+          <View style={headerFooterStyles.body}>
+            <View style={styles.container}>
+              <View style={styles.mapArea}>
+                {true && (
+                  <>
+                    <MapView
+                      provider={PROVIDER_GOOGLE} // remove if not using Google Maps
+                      style={styles.map}
+                      region={{
+                        latitude: telemetry ? telemetry.gps.latitude : 49.2137364,
+                        longitude: telemetry ? telemetry.gps.longitude : -122.9250981,
+                        latitudeDelta: 0.015,
+                        longitudeDelta: 0.0121,
+                      }}
+                      moveOnMarkerPress={false}
+                      onPress={() => {
+                        console.log('Tapped off map');
+                      }}
+                    >
+                      <Marker
+                        coordinate={{
+                          latitude: 49.2096,
+                          longitude: -122.9263,
+                        }}
+                        icon={require('../../../assets/user_location_map_enlarged.png')}
+                      />
+                      {AvailableBikes
+                        ? AvailableBikes.map((bike) => (
+                            <Marker
+                              coordinate={{
+                                latitude: bike.location.latitude,
+                                longitude: bike.location.longitude,
+                              }}
+                              title={bike.bikeName}
+                              description={'★' + bike.rating + '\n' + '$' + bike.price + '/hour'}
+                              icon={require('../../../assets/available_bike_map_enlarged.png')}
+                              onPress={() => {
+                                // console.log('Tapped on map');
+                                // setSelectedBike(bike);
+                                // bikeInfo.lock_state = true;
+                                // bikeInfo.rented = false;
+                                // bikeInfo.username = '';
+                                // setBikeInfo(bikeInfo);
+                                // editBike(bikeInfo);
+                                // getBike();
+                              }}
+                              key={bike.key}
+                            />
+                          ))
+                        : null}
+                      <Marker
+                        coordinate={{
+                          latitude: bikeInfo.lat,
+                          longitude: bikeInfo.long,
+                        }}
+                        title={bikeInfo.name}
+                        description={'★' + bikeInfo.rating + '\n' + '$' + bikeInfo.price + '/hour'}
+                        icon={require('../../../assets/available_demo_bike_map_enlarged.png')}
+                        onPress={() => {}}
+                        key={bikeInfo.name}
+                      />
+                    </MapView>
+                  </>
+                )}
+              </View>
+
+              <View style={styles.buttonArea}>
+                <TouchableOpacity
+                  style={styles.rentButton}
+                  onPress={() => (SelectedBike == 0 ? 0 : onCheckoutPressed(1))}
+                >
+                  <View style={styles.rentButton}>
+                    <Text
+                      style={{
+                        fontWeight: 'bold',
+                        color: '#300000',
+                        fontSize: 26,
+                        textAlign: 'center',
+                        // fontWeight: 'bold',
+                        flexShrink: 1,
+                      }}
+                    >
+                      {SelectedBike == 0 ? 'Select Bike' : 'Rent: ' + SelectedBike.bikeName}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.rentButton}
+                  onPress={() => {
+                    onCheckoutPressed(0);
                   }}
                 >
-                  <Marker
-                    coordinate={{
-                      latitude: telemetry.gps.latitude,
-                      longitude: telemetry.gps.longitude,
-                    }}
-                    pinColor="black"
-                  />
-                </MapView>
-              </>
-            )}
-          </View>
-          <View style={styles.dataContainer}>
-            <View style={styles.dataContainerRow}>
-              <View>
-                <Text style={styles.dataHeader}>Signal (RSSI)</Text>
-                <Text style={styles.dataValue}>{telemetry ? telemetry.grps.rssi : '0'} dBm</Text>
+                  <View style={styles.rentButton}>
+                    <Text
+                      style={{
+                        fontWeight: 'bold',
+                        color: '#300000',
+                        fontSize: 26,
+                        textAlign: 'center',
+                        // fontWeight: 'bold',
+                        flexShrink: 1,
+                      }}
+                    >
+                      List of Bikes
+                    </Text>
+                  </View>
+                </TouchableOpacity>
               </View>
-              <View>
-                <Text style={styles.dataHeader}>Network</Text>
-                <Text style={styles.dataValue}>{getFriendlyNetworkStatus()}</Text>
-              </View>
-            </View>
-            <View style={styles.dataContainerRow}>
-              <View>
-                <Text style={styles.dataHeader}>Long</Text>
-                <Text style={styles.dataValue}>{telemetry ? telemetry.gps.longitude : '0'}</Text>
-              </View>
-              <View>
-                <Text style={styles.dataHeader}>Lat</Text>
-                <Text style={styles.dataValue}>{telemetry ? telemetry.gps.latitude : '0'}</Text>
-              </View>
-              <View>
-                <Text style={styles.dataHeader}>Alt</Text>
-                <Text style={styles.dataValue}>{telemetry ? telemetry.gps.altitude : '0'}</Text>
-              </View>
-            </View>
-            <View>
-              <TouchableOpacity
-                style={isUnlockable() ? styles.unlockButton : styles.unlockButtonDisabled}
-                onPress={() => {
-                  if (isUnlockable()) {
-                    addTask('UNLOCK');
-                  } else {
-                    Alert.alert(
-                      'Reset Delegator State?',
-                      'Would you like to reset the list of tasks for the delegator?',
-                      [
-                        {
-                          text: 'Cancel',
-                          style: 'cancel',
-                          onPress: () => {},
-                        },
-                        {
-                          text: 'Okay',
-                          style: 'destructive',
-                          onPress: () => {
-                            removeTask('UNLOCK');
-                          },
-                        },
-                      ]
-                    );
-                  }
-                }}
-              >
-                <Text style={styles.unlockButtonText}>Unlock Bike</Text>
-              </TouchableOpacity>
             </View>
           </View>
-        </View>
-        <View style={headerFooterStyles.footer}>{generateFooter()}</View>
-      </ImageBackground>
-    </View>
-  );
+          <View style={headerFooterStyles.footer}>{generateFooter()}</View>
+        </ImageBackground>
+      </View>
+    );
+  }
 };
 
 const styles = StyleSheet.create({
@@ -231,27 +399,40 @@ const styles = StyleSheet.create({
   },
 
   container: {
-    display: 'flex',
+    // display: 'flex',
     flex: 1,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: 'red',
     // alignItems: 'center',
     // justifyContent: 'flex-end',
     // width: '100%',
     flexDirection: 'column',
   },
+  mapArea: {
+    flex: 0.9,
+    backgroundColor: 'yellow',
+  },
+  buttonArea: {
+    flex: 0.1,
+    flexDirection: 'row',
+    backgroundColor: 'green',
+    borderWidth: 1,
+  },
 
   dataContainer: {
+    flex: 1,
     display: 'flex',
     flexDirection: 'column',
     backgroundColor: '#ffffff',
-    width: '100%',
+    width: '90%',
     minHeight: '25%',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 20,
     paddingHorizontal: 25,
-    paddingTop: 10,
+    // paddingTop: 10,
+    paddingVertical: 10,
     position: 'absolute',
-    bottom: 0,
+    bottom: '20%',
+    left: '5%',
+    right: '5%',
   },
 
   dataContainerRow: {
@@ -276,36 +457,6 @@ const styles = StyleSheet.create({
     color: '#000000',
   },
 
-  unlockButton: {
-    backgroundColor: '#B4FF39',
-    color: '#000',
-    textAlign: 'center',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 20,
-    marginTop: 25,
-    marginBottom: 20,
-  },
-
-  unlockButtonDisabled: {
-    backgroundColor: '#BFC0BD',
-    color: '#000',
-    textAlign: 'center',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 20,
-    marginTop: 25,
-    marginBottom: 20,
-  },
-
-  unlockButtonText: {
-    fontWeight: 'bold',
-  },
-
   mapContainer: {
     ...StyleSheet.absoluteFillObject,
     height: 400,
@@ -317,13 +468,16 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
 
-  modalBackground: {
-    minHeight: 50,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    width: 100,
-    height: 100,
+  rentButton: {
+    flex: 1,
+    backgroundColor: '#B4FF39',
+    color: '#000',
+    // textAlign: 'center',
+    // display: 'flex',
+    justifyContent: 'center',
+    // alignItems: 'center',
+    // paddingHorizontal: '1%',
+    borderWidth: 0.5,
   },
 });
-
 export default MapScreen;

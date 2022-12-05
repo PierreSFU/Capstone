@@ -3,6 +3,8 @@ import { Auth } from 'aws-amplify';
 import React, { useState } from 'react';
 import CustomInput from '../../components/CustomInput';
 import CustomButton from '../../components/CustomButton';
+import { registerIndieID } from 'native-notify';
+import axios from 'axios';
 import {
   View,
   Text,
@@ -17,6 +19,7 @@ import {
 import { useForm, Controller } from 'react-hook-form';
 
 const SignInScreen = () => {
+  registerIndieID('SwivelUserId', 5009, 'zLGSh3bkdXv2IweqrDbIFD');
   const [loading, setLoading] = useState(false);
   const navigation = useNavigation();
   const {
@@ -24,7 +27,7 @@ const SignInScreen = () => {
     handleSubmit,
     formState: { errors },
   } = useForm();
-
+  
   const onSignInPress = async (data) => {
     //Do validation
     if (loading) {
